@@ -54,6 +54,13 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 		ball.Anchored = false
 		ball.CanCollide = false
 		
+		-- Disable animations FIRST before any pose changes
+		local animate = character:FindFirstChild("Animate")
+		if animate then animate.Disabled = true end
+		
+		-- Wait a frame for animations to fully stop
+		task.wait()
+		
 		local ballSocket = slingshot:FindFirstChild("BallSocket")
 		if ballSocket then
 			ball.CFrame = ballSocket.CFrame
@@ -67,9 +74,6 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 			-- Fallback position
 			ball.CFrame = root.CFrame * CFrame.new(0, 0, -5)
 		end
-
-		local animate = character:FindFirstChild("Animate")
-		if animate then animate.Disabled = true end
 		
 		-- Get hand targets on the slingshot pouch
 		local socket = slingshot:WaitForChild("BallSocket")
@@ -95,10 +99,29 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 		rightIK.Weight = 1
 		rightIK.Parent = character
 				
-		-- Lean torso back a bit for the “full pull” look (R15 waist)
+		-- Bend torso forward (inward at stomach) for "maximum pull" look
 		local waist = character:FindFirstChild("Waist", true)
+		local originalWaistC0 = nil
 		if waist and waist:IsA("Motor6D") then
-			waist.Transform = CFrame.Angles(0, 0, math.rad(20)) -- tweak angle
+			originalWaistC0 = waist.C0
+			-- Apply bend forward rotation to C0
+			waist.C0 = originalWaistC0 * CFrame.Angles(math.rad(-30), 0, 0)
+		end
+		
+		-- Angle legs back (character on heels, leaning back)
+		local leftHip = character:FindFirstChild("LeftHip", true)
+		local rightHip = character:FindFirstChild("RightHip", true)
+		local originalLeftHipC0 = nil
+		local originalRightHipC0 = nil
+		
+		if leftHip and leftHip:IsA("Motor6D") then
+			originalLeftHipC0 = leftHip.C0
+			-- Apply backward tilt to C0
+			leftHip.C0 = originalLeftHipC0 * CFrame.Angles(math.rad(20), 0, 0)
+		end
+		if rightHip and rightHip:IsA("Motor6D") then
+			originalRightHipC0 = rightHip.C0
+			rightHip.C0 = originalRightHipC0 * CFrame.Angles(math.rad(20), 0, 0)
 		end
 		
 		-- Track for cleanup
@@ -108,6 +131,11 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 		session.rightIK = rightIK
 		session.animateScript = animate
 		session.waist = waist
+		session.originalWaistC0 = originalWaistC0
+		session.leftHip = leftHip
+		session.originalLeftHipC0 = originalLeftHipC0
+		session.rightHip = rightHip
+		session.originalRightHipC0 = originalRightHipC0
 		activeSessions[player] = session
 
 	elseif action == "Shoot" then
@@ -142,7 +170,15 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 				if session.model then session.model:Destroy() end
 				if session.leftIK then session.leftIK:Destroy() end
 				if session.rightIK then session.rightIK:Destroy() end
-				if session.waist then session.waist.Transform = CFrame.new() end
+				if session.waist and session.originalWaistC0 then 
+					session.waist.C0 = session.originalWaistC0 
+				end
+				if session.leftHip and session.originalLeftHipC0 then 
+					session.leftHip.C0 = session.originalLeftHipC0 
+				end
+				if session.rightHip and session.originalRightHipC0 then 
+					session.rightHip.C0 = session.originalRightHipC0 
+				end
 				if session.animateScript then session.animateScript.Disabled = false end
 				activeSessions[player] = nil
 			end
