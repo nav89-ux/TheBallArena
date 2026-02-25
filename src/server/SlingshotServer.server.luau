@@ -2,7 +2,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local event = ReplicatedStorage:WaitForChild("SlingshotEvent")
 
 -- Configuration
-local ANIMATION_ID = "rbxassetid://116900221715996"
 local SLINGSHOT_TEMPLATE_NAME = "BigSlingshot" 
 
 -- Store active slingshot sessions per player
@@ -36,7 +35,7 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 		-- 3. Position Slingshot relative to Player
 		-- Adjust these numbers to fit your specific model size
 		-- (0, -3, -3) usually puts it on the ground (hip height ~3) and slightly forward
-		local spawnOffset = CFrame.new(0, -3, -2) 
+		local spawnOffset = CFrame.new(0, -3, -5) 
 		slingshot:PivotTo(root.CFrame * spawnOffset)
 		
 		-- 4. Weld Slingshot to Player (so it aims with you)
@@ -69,51 +68,52 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 			ball.CFrame = root.CFrame * CFrame.new(0, 0, -5)
 		end
 
-		-- 6. Play "Hold" Animation
-		local animator = humanoid:FindFirstChild("Animator")
-		if not animator then
-			animator = Instance.new("Animator")
-			animator.Parent = humanoid
+		local animate = character:FindFirstChild("Animate")
+		if animate then animate.Disabled = true end
+		
+		-- Get hand targets on the slingshot pouch
+		local socket = slingshot:WaitForChild("BallSocket")
+		local leftTarget = socket:WaitForChild("LeftHandTarget") :: Attachment
+		local rightTarget = socket:WaitForChild("RightHandTarget") :: Attachment
+		
+		-- Create IK for both arms (R15)
+		local leftIK = Instance.new("IKControl")
+		leftIK.Name = "LeftArmHold"
+		leftIK.ChainRoot = character:WaitForChild("LeftUpperArm")
+		leftIK.EndEffector = character:WaitForChild("LeftHand")
+		leftIK.Target = leftTarget
+		leftIK.Type = Enum.IKControlType.Position
+		leftIK.Weight = 1
+		leftIK.Parent = character
+		
+		local rightIK = Instance.new("IKControl")
+		rightIK.Name = "RightArmHold"
+		rightIK.ChainRoot = character:WaitForChild("RightUpperArm")
+		rightIK.EndEffector = character:WaitForChild("RightHand")
+		rightIK.Target = rightTarget
+		rightIK.Type = Enum.IKControlType.Position
+		rightIK.Weight = 1
+		rightIK.Parent = character
+				
+		-- Lean torso back a bit for the “full pull” look (R15 waist)
+		local waist = character:FindFirstChild("Waist", true)
+		if waist and waist:IsA("Motor6D") then
+			waist.Transform = CFrame.Angles(0, 0, math.rad(20)) -- tweak angle
 		end
 		
-		local animation = Instance.new("Animation")
-		animation.AnimationId = ANIMATION_ID
-		
-		local track = animator:LoadAnimation(animation)
-		track.Priority = Enum.AnimationPriority.Action -- FORCE the animation to override others
-		track.Looped = true
-		track:Play()
-				
-		-- 7. Store Session Data
-		activeSessions[player] = {
-			model = slingshot,
-			track = track
-		}
+		-- Track for cleanup
+		local session = activeSessions[player] or {}
+		session.model = slingshot
+		session.leftIK = leftIK
+		session.rightIK = rightIK
+		session.animateScript = animate
+		session.waist = waist
+		activeSessions[player] = session
 
 	elseif action == "Shoot" then
 
 		local character = player.Character
 		if not character then return end
-
-		-- 1. Cleanup Session (Destroy Slingshot, Stop Animation)
-		local session = activeSessions[player]
-		if session then
-			if session.model then
-				session.model:Destroy()
-			end
-			if session.track then
-				session.track:Stop()
-			end
-			activeSessions[player] = nil
-		end
-		
-		-- 2. Unlock Character
-		local humanoid = character:FindFirstChild("Humanoid")
-		if humanoid then
-			humanoid.WalkSpeed = 16
-			humanoid.JumpPower = 50
-			humanoid.AutoRotate = true
-		end
 
 		-- 3. Launch Ball
 		-- Break any existing welds (like the one to the slingshot)
@@ -134,5 +134,29 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 		bodyVelocity.Parent = ball
 		
 		game.Debris:AddItem(bodyVelocity, 0.3)
+
+		-- Delay cleanup for visual follow-through
+		task.delay(0.5, function()
+			local session = activeSessions[player]
+			if session then
+				if session.model then session.model:Destroy() end
+				if session.leftIK then session.leftIK:Destroy() end
+				if session.rightIK then session.rightIK:Destroy() end
+				if session.waist then session.waist.Transform = CFrame.new() end
+				if session.animateScript then session.animateScript.Disabled = false end
+				activeSessions[player] = nil
+			end
+			
+			-- 2. Unlock Character
+			if player and player.Character then
+				local humanoid = player.Character:FindFirstChild("Humanoid")
+				if humanoid then
+					humanoid.WalkSpeed = 16
+					humanoid.JumpPower = 50
+					humanoid.AutoRotate = true
+				end
+			end
+		end)
+
 	end
 end)
