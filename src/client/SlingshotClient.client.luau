@@ -10,14 +10,30 @@ local trajectoryPoints = {}
 local maxPower = 450
 local heldBall = nil
 
--- Get the ball and its prompt
-local ball = workspace:WaitForChild("Ball") -- Make sure your sphere is named "Ball"
-local prompt = ball:WaitForChild("ProximityPrompt")
+-- Function to connect to a ball's proximity prompt
+local function connectBall(ball)
+	local prompt = ball:FindFirstChild("ProximityPrompt")
+	if prompt then
+		prompt.Triggered:Connect(function()
+			heldBall = ball
+			event:FireServer("Mount", heldBall)
+		end)
+	end
+end
 
--- When E is pressed
-prompt.Triggered:Connect(function()
-	heldBall = ball
-	event:FireServer("Mount", heldBall)
+-- Connect to all existing balls in workspace
+for _, obj in pairs(workspace:GetDescendants()) do
+	if obj:IsA("BasePart") and obj.Name:match("_Ball_") then
+		connectBall(obj)
+	end
+end
+
+-- Connect to new balls that get added
+workspace.DescendantAdded:Connect(function(obj)
+	if obj:IsA("BasePart") and obj.Name:match("_Ball_") then
+		task.wait() -- Wait for ProximityPrompt to be added
+		connectBall(obj)
+	end
 end)
 
 -- Mouse Hold
