@@ -42,30 +42,92 @@ local maxX = basePos.X + baseSize.X / 2 - SPAWN_MARGIN
 local minZ = basePos.Z - baseSize.Z / 2 + SPAWN_MARGIN
 local maxZ = basePos.Z + baseSize.Z / 2 - SPAWN_MARGIN
 
--- Function to spawn balls randomly in a section
+local function computeCentralPlaneNormal(): Vector3
+	local cf = centralLine.CFrame
+	local size = centralLine.Size
+	local normal
+	if size.X < size.Z then
+		normal = cf.RightVector
+	else
+		normal = cf.LookVector
+	end
+
+	normal = Vector3.new(normal.X, 0, normal.Z)
+	if normal.Magnitude < 1e-6 then
+		normal = Vector3.zAxis
+	else
+		normal = normal.Unit
+	end
+
+	local xDot = math.abs(normal:Dot(Vector3.xAxis))
+	local zDot = math.abs(normal:Dot(Vector3.zAxis))
+	local alignAxis = (zDot >= xDot) and Vector3.zAxis or Vector3.xAxis
+	if normal:Dot(alignAxis) < 0 then
+		normal = -normal
+	end
+
+	return normal
+end
+
+local centralPlaneNormal = computeCentralPlaneNormal()
+
+local function isOnSide(pos: Vector3, sideSign: number, margin: number): boolean
+	local d = (pos - centralLine.Position):Dot(centralPlaneNormal)
+	if sideSign < 0 then
+		return d <= -margin
+	else
+		return d >= margin
+	end
+end
+
+local function getRandomSpawnPosition(sideSign: number): Vector3
+	local randomY = basePos.Y + baseSize.Y / 2 + SPAWN_HEIGHT
+	local attempts = 0
+	while attempts < 200 do
+		attempts += 1
+		local randomX = minX + math.random() * (maxX - minX)
+		local randomZ = minZ + math.random() * (maxZ - minZ)
+		local pos = Vector3.new(randomX, randomY, randomZ)
+		if isOnSide(pos, sideSign, SPAWN_MARGIN) then
+			return pos
+		end
+	end
+
+	attempts = 0
+	while attempts < 200 do
+		attempts += 1
+		local randomX = minX + math.random() * (maxX - minX)
+		local randomZ = minZ + math.random() * (maxZ - minZ)
+		local pos = Vector3.new(randomX, randomY, randomZ)
+		if isOnSide(pos, sideSign, 0) then
+			warn("⚠️ BallSpawner: Had to relax CentralLine margin to place a ball on the requested side.")
+			return pos
+		end
+	end
+
+	warn("⚠️ BallSpawner: Could not sample a valid point on the requested side; forcing position across CentralLine.")
+	local randomX = minX + math.random() * (maxX - minX)
+	local randomZ = minZ + math.random() * (maxZ - minZ)
+	local pos = Vector3.new(randomX, randomY, randomZ)
+	local d = (pos - centralLine.Position):Dot(centralPlaneNormal)
+	local epsilon = 0.1
+	local targetD = (sideSign < 0) and (-epsilon) or (epsilon)
+	pos += centralPlaneNormal * (targetD - d)
+	return pos
+end
+
+-- Function to spawn balls randomly on one side of the CentralLine plane
 local function spawnBallsInSection(isTeamA)
 	local teamName = isTeamA and "TeamA" or "TeamB"
-	local zMin, zMax
-	
-	if isTeamA then
-		zMin = minZ
-		zMax = centralLineZ - SPAWN_MARGIN
-	else
-		zMin = centralLineZ + SPAWN_MARGIN
-		zMax = maxZ
-	end
-	
+	local sideSign = isTeamA and -1 or 1
+
 	for i = 1, BALLS_PER_SIDE do
 		local ball = ballTemplate:Clone()
-		
-		-- Random position within the section
-		local randomX = minX + math.random() * (maxX - minX)
-		local randomZ = zMin + math.random() * (zMax - zMin)
-		local randomY = basePos.Y + baseSize.Y / 2 + SPAWN_HEIGHT
-		
-		ball.CFrame = CFrame.new(randomX, randomY, randomZ)
+		local pos = getRandomSpawnPosition(sideSign)
+
+		ball.CFrame = CFrame.new(pos)
 		ball.Parent = workspace
-		
+
 		-- Add a ProximityPrompt if it doesn't exist
 		if not ball:FindFirstChild("ProximityPrompt") then
 			local prompt = Instance.new("ProximityPrompt")
@@ -75,7 +137,7 @@ local function spawnBallsInSection(isTeamA)
 			prompt.HoldDuration = 0
 			prompt.Parent = ball
 		end
-		
+
 		ball:SetAttribute("Team", teamName)
 		ball.Name = teamName .. "_Ball_" .. i
 	end
