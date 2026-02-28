@@ -7,7 +7,7 @@ local RunService = game:GetService("RunService")
 local gravity = workspace.Gravity
 local trajectoryPoints = {}
 
-local maxPower = 450
+local maxPower = 350
 local heldBall = nil
 
 -- Function to connect to a ball's proximity prompt

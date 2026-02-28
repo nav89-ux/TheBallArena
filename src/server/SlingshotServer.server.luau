@@ -32,14 +32,22 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 		local slingshot = slingshotTemplate:Clone()
 		slingshot.Parent = workspace
 		
+		-- Ensure the slingshot itself doesn't collide with anything (especially the ball)
+		for _, part in pairs(slingshot:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+				part.Anchored = false -- It will be welded to player
+			end
+		end
+		
 		-- 3. Position Slingshot relative to Player
-		-- Adjust these numbers to fit your specific model size
-		-- (0, -3, -3) usually puts it on the ground (hip height ~3) and slightly forward
-		local spawnOffset = CFrame.new(0, -3, -5) 
+		-- Slingshot Frame placed further forward ("Grounded")
+		-- Lowering Y to -3.5 to ensure it touches the ground (Root is usually ~3 studs up)
+		local SLINGSHOT_DIST = 8
+		local spawnOffset = CFrame.new(0, -3.5, -SLINGSHOT_DIST) 
 		slingshot:PivotTo(root.CFrame * spawnOffset)
 		
 		-- 4. Weld Slingshot to Player (so it aims with you)
-		-- We assume the model has a PrimaryPart (the Base)
 		if slingshot.PrimaryPart then
 			local slingWeld = Instance.new("WeldConstraint")
 			slingWeld.Part0 = root
@@ -49,30 +57,92 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 			warn("BigSlingshot Model is missing a PrimaryPart! Set the 'Base' as PrimaryPart.")
 		end
 
-		-- 5. Position and Weld the Ball
-		ball.Parent = workspace -- Keep independent so it doesn't get destroyed with model
+		-- 5. Handle Ball and Socket (Pulled Back Position)
+		ball.Parent = workspace 
 		ball.Anchored = false
 		ball.CanCollide = false
 		
-		-- Disable animations FIRST before any pose changes
+		-- Disable animations
 		local animate = character:FindFirstChild("Animate")
 		if animate then animate.Disabled = true end
-		
-		-- Wait a frame for animations to fully stop
 		task.wait()
 		
 		local ballSocket = slingshot:FindFirstChild("BallSocket")
+		local PULL_DIST = 2.5 -- Close to player (held)
+		
 		if ballSocket then
+			-- Break all welds on BallSocket so we can move it independently of the frame
+			ballSocket:BreakJoints()
+			
+			-- Position BallSocket relative to player (Pulled back state)
+			-- Lowering Y by -1 to match the "holding down" look
+			ballSocket.CFrame = root.CFrame * CFrame.new(0, -1, -PULL_DIST)
+			
+			local socketWeld = Instance.new("WeldConstraint")
+			socketWeld.Part0 = root
+			socketWeld.Part1 = ballSocket
+			socketWeld.Parent = ballSocket
+			
+			-- Move ball to socket
 			ball.CFrame = ballSocket.CFrame
 			
 			local ballWeld = Instance.new("WeldConstraint")
 			ballWeld.Part0 = ballSocket
 			ballWeld.Part1 = ball
 			ballWeld.Parent = ball
+			
+			-- 6. Create Visual Elastics (Beams)
+			-- Try to find tips or use offsets
+			local leftTip = slingshot:FindFirstChild("LeftTip")
+			local rightTip = slingshot:FindFirstChild("RightTip")
+			
+			-- Helper to create attachment if tip part exists, or estimate
+			local function getTipAttachment(name, offsetDir)
+				local tipPart = slingshot:FindFirstChild(name)
+				local att = Instance.new("Attachment")
+				if tipPart then
+					att.Parent = tipPart
+				else
+					-- Estimate based on PrimaryPart (Base)
+					-- Assuming Y-shape: Up and Left/Right
+					if slingshot.PrimaryPart then
+						att.Parent = slingshot.PrimaryPart
+						-- Estimated offset: Up 4, Side 1.5 (Adjust based on model)
+						att.Position = Vector3.new(offsetDir * 1.5, 5, 0)
+					end
+				end
+				return att
+			end
+			
+			local attLeft = getTipAttachment("LeftTip", -1)
+			local attRight = getTipAttachment("RightTip", 1)
+			
+			-- Socket attachments (where bands connect to pouch)
+			local attSocketL = Instance.new("Attachment", ballSocket)
+			attSocketL.Position = Vector3.new(-0.5, 0, 0)
+			local attSocketR = Instance.new("Attachment", ballSocket)
+			attSocketR.Position = Vector3.new(0.5, 0, 0)
+			
+			-- Create Beams
+			local function createBand(att0, att1)
+				local beam = Instance.new("Beam")
+				beam.Attachment0 = att0
+				beam.Attachment1 = att1
+				beam.FaceCamera = true
+				beam.Width0 = 0.2
+				beam.Width1 = 0.2
+				beam.Color = ColorSequence.new(Color3.fromRGB(200, 180, 140)) -- Tan/Rubber color
+				beam.Parent = ballSocket
+				return beam
+			end
+			
+			createBand(attLeft, attSocketL)
+			createBand(attRight, attSocketR)
+			
 		else
-			warn("BallSocket part not found in BigSlingshot! Please add a part named 'BallSocket'.")
-			-- Fallback position
-			ball.CFrame = root.CFrame * CFrame.new(0, 0, -5)
+			warn("BallSocket part not found in BigSlingshot!")
+			-- Fallback: Maintain the "low hold" position even without socket
+			ball.CFrame = root.CFrame * CFrame.new(0, -1, -PULL_DIST)
 		end
 		
 		-- Get hand targets on the slingshot pouch
@@ -144,24 +214,52 @@ event.OnServerEvent:Connect(function(player, action, ball, direction, power)
 		if not character then return end
 
 		-- 3. Launch Ball
-		-- Break any existing welds (like the one to the slingshot)
+		-- Break any existing welds
 		for _, w in pairs(ball:GetChildren()) do
 			if w:IsA("WeldConstraint") or w:IsA("Weld") then
 				w:Destroy()
 			end
 		end
 		
-		ball.Anchored = false
-		ball.CanCollide = true
 		ball.Parent = workspace
+		ball.Anchored = false
+		ball.CanCollide = false -- Keep false while setting up constraints
 		
-		local bodyVelocity = Instance.new("BodyVelocity")
-		bodyVelocity.MaxForce = Vector3.new(100000,100000,100000)
-		bodyVelocity.Velocity = direction * power
+		print("🏀 Shooting Ball. Size: " .. tostring(ball.Size))
+		print("🚀 Direction: " .. tostring(direction))
 		
-		bodyVelocity.Parent = ball
+		-- Create NoCollisionConstraint between ball and character
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") and part.CanCollide then
+				local noCollide = Instance.new("NoCollisionConstraint")
+				noCollide.Part0 = ball
+				noCollide.Part1 = part
+				noCollide.Parent = ball
+			end
+		end
 		
-		game.Debris:AddItem(bodyVelocity, 0.3)
+		-- DEBUG: Visual Ray of the shooting direction
+		local ray = Instance.new("Part")
+		ray.Size = Vector3.new(0.2, 0.2, 5)
+		ray.Anchored = true
+		ray.CanCollide = false
+		ray.Color = Color3.fromRGB(255, 0, 0)
+		ray.Material = Enum.Material.Neon
+		ray.CFrame = CFrame.new(ball.Position, ball.Position + direction) * CFrame.new(0, 0, -2.5)
+		ray.Parent = workspace
+		game.Debris:AddItem(ray, 1) -- Remove after 1 second
+		
+		-- Set NetworkOwner to server
+		ball:SetNetworkOwner(nil)
+		
+		-- Enable collision NOW that constraints are in place
+		ball.CanCollide = true
+		
+		-- Apply Velocity
+		ball.AssemblyLinearVelocity = direction * power
+		
+		-- Optional: Add a slight upward arc if desired, but for now we keep it linear
+		-- ball.AssemblyLinearVelocity += Vector3.new(0, 10, 0)
 
 		-- Delay cleanup for visual follow-through
 		task.delay(0.5, function()
