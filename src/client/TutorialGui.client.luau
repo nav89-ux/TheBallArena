@@ -97,23 +97,11 @@ Get all 5 of your balls onto the opponent's side while keeping your own side emp
 	end)
 end
 
-local function onPlayerAdded(player)
-	-- Wait a moment for the player to fully load
-	task.wait(2)
-	
-	-- Only show tutorial if player is in lobby (not in arena)
-	if not player:GetAttribute("Team") then
-		createTutorialGui(player)
-	end
-end
-
-Players.PlayerAdded:Connect(onPlayerAdded)
-
--- Handle existing players
-for _, player in pairs(Players:GetPlayers()) do
-	task.spawn(function()
-		onPlayerAdded(player)
-	end)
+-- LocalScript: only run for the local player
+local player = Players.LocalPlayer
+task.wait(2)
+if not player:GetAttribute("Team") then
+	createTutorialGui(player)
 end
 
 print("✅ TutorialService ready.")

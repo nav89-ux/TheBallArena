@@ -115,14 +115,18 @@ end
 local function teleportPlayers()
 	if isTeleporting or not redPlayer or not bluePlayer then return end
 	isTeleporting = true
-	
+
+	-- Capture before any async yields (Heartbeat may nil these after players leave pads)
+	local capturedRed = redPlayer
+	local capturedBlue = bluePlayer
+
 	print("🚀 TELEPORTING STARTED")
 	countdownLabel.Text = "GO!"
 	countdownLight.Brightness = 10
 	countdownLight.Color = Color3.fromRGB(0, 255, 0)
 	
-	redPlayer:SetAttribute("Team", RED_TEAM_NAME)
-	bluePlayer:SetAttribute("Team", BLUE_TEAM_NAME)
+	capturedRed:SetAttribute("Team", RED_TEAM_NAME)
+	capturedBlue:SetAttribute("Team", BLUE_TEAM_NAME)
 	
 	if _G.SpawnGameBalls then
 		_G.SpawnGameBalls()
@@ -140,14 +144,20 @@ local function teleportPlayers()
 		root.CFrame = CFrame.new(spawnPos, centralLine.Position)
 	end
 	
-	teleportToSide(redPlayer, -1)
-	teleportToSide(bluePlayer, 1)
+	teleportToSide(capturedRed, -1)
+	teleportToSide(capturedBlue, 1)
 	
 	task.wait(1)
 	isTeleporting = false
 	countdownTime = 0
 	countdownLabel.Text = ""
 	countdownLight.Brightness = 0
+
+	if _G.StartWinCondition then
+		_G.StartWinCondition(capturedRed, capturedBlue)
+	else
+		warn("StartWinCondition global function not found!")
+	end
 end
 
 RunService.Heartbeat:Connect(function(dt)

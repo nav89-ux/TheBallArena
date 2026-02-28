@@ -1,4 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
 -- Configuration
 local BALLS_PER_SIDE = 5
@@ -106,7 +108,7 @@ end
 -- Clear existing balls
 local function clearBalls()
 	for _, child in pairs(workspace:GetChildren()) do
-		if child.Name:match("Team[AB]_Ball_") then
+		if child.Name:match("Team%a+_Ball_") then
 			child:Destroy()
 		end
 	end
@@ -145,6 +147,98 @@ _G.SpawnGameBalls = function()
 	spawnBallsForTeam("TeamRed", Color3.fromRGB(255, 0, 0))
 	spawnBallsForTeam("TeamBlue", Color3.fromRGB(0, 0, 255))
 end
+
+-- Create WinRoundEvent for client announcements
+local winRoundEvent = ReplicatedStorage:FindFirstChild("WinRoundEvent")
+if not winRoundEvent then
+	winRoundEvent = Instance.new("RemoteEvent")
+	winRoundEvent.Name = "WinRoundEvent"
+	winRoundEvent.Parent = ReplicatedStorage
+end
+
+-- Win condition configuration
+local WIN_CHECK_INTERVAL = 0.5
+local WIN_GRACE_PERIOD = 3
+local WIN_ANNOUNCE_DELAY = 4
+
+-- Win condition state
+local gameActive = false
+local currentRedPlayer = nil
+local currentBluePlayer = nil
+local winCheckTimer = 0
+local graceTimer = 0
+
+local function countBallsOnSide(sideSign: number): number
+	local count = 0
+	for _, child in pairs(workspace:GetChildren()) do
+		if child:IsA("BasePart") and child:GetAttribute("Team") ~= nil then
+			if isOnSide(child.Position, sideSign, 0) then
+				count += 1
+			end
+		end
+	end
+	return count
+end
+
+local function endGame(winnerTeam: string)
+	if not gameActive then return end
+	gameActive = false
+
+	print("🏆 " .. winnerTeam .. " WINS THE ROUND!")
+	winRoundEvent:FireAllClients(winnerTeam)
+
+	task.wait(WIN_ANNOUNCE_DELAY)
+
+	clearBalls()
+
+	if currentRedPlayer then
+		currentRedPlayer:SetAttribute("Team", nil)
+		if currentRedPlayer.Character then
+			currentRedPlayer:LoadCharacter()
+		end
+	end
+	if currentBluePlayer then
+		currentBluePlayer:SetAttribute("Team", nil)
+		if currentBluePlayer.Character then
+			currentBluePlayer:LoadCharacter()
+		end
+	end
+
+	currentRedPlayer = nil
+	currentBluePlayer = nil
+end
+
+_G.StartWinCondition = function(redPlayer, bluePlayer)
+	currentRedPlayer = redPlayer
+	currentBluePlayer = bluePlayer
+	graceTimer = WIN_GRACE_PERIOD
+	winCheckTimer = 0
+	gameActive = true
+	print("🏆 Win condition monitoring started!")
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	if not gameActive then return end
+
+	if graceTimer > 0 then
+		graceTimer -= dt
+		return
+	end
+
+	winCheckTimer -= dt
+	if winCheckTimer > 0 then return end
+	winCheckTimer = WIN_CHECK_INTERVAL
+
+	-- TeamRed spawns on sideSign -1, TeamBlue on sideSign +1
+	local redSideBalls = countBallsOnSide(-1)
+	local blueSideBalls = countBallsOnSide(1)
+
+	if redSideBalls == 0 then
+		endGame("TeamRed")
+	elseif blueSideBalls == 0 then
+		endGame("TeamBlue")
+	end
+end)
 
 print("✅ BallSpawner logic ready.")
 
