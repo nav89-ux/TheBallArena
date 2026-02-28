@@ -6,8 +6,6 @@ local BALL_TEMPLATE_NAME = "Ball"
 local SPAWN_HEIGHT = 2
 local SPAWN_MARGIN = 5
 
-print("🔍 BallSpawner: Starting...")
-
 -- Get CentralLine and arena boundaries
 local centralLine = workspace:WaitForChild("BattleArena"):WaitForChild("Map"):WaitForChild("CentralLine")
 local basePlate = workspace:WaitForChild("BattleArena"):WaitForChild("Map"):WaitForChild("BasePlate")
@@ -17,23 +15,14 @@ if not centralLine or not basePlate then
 	return
 end
 
-print("✅ BallSpawner: Found CentralLine and BasePlate")
-
 -- Get ball template
 local ballTemplate = ReplicatedStorage:FindFirstChild(BALL_TEMPLATE_NAME)
 if not ballTemplate then
 	warn("❌ BallSpawner: Ball template '" .. BALL_TEMPLATE_NAME .. "' not found in ReplicatedStorage!")
-	warn("Available items in ReplicatedStorage:")
-	for _, child in pairs(ReplicatedStorage:GetChildren()) do
-		print("  - " .. child.Name)
-	end
 	return
 end
 
-print("✅ BallSpawner: Found ball template")
-
 -- Calculate arena bounds
-local centralLineZ = centralLine.Position.Z
 local baseSize = basePlate.Size
 local basePos = basePlate.Position
 
@@ -100,12 +89,10 @@ local function getRandomSpawnPosition(sideSign: number): Vector3
 		local randomZ = minZ + math.random() * (maxZ - minZ)
 		local pos = Vector3.new(randomX, randomY, randomZ)
 		if isOnSide(pos, sideSign, 0) then
-			warn("⚠️ BallSpawner: Had to relax CentralLine margin to place a ball on the requested side.")
 			return pos
 		end
 	end
 
-	warn("⚠️ BallSpawner: Could not sample a valid point on the requested side; forcing position across CentralLine.")
 	local randomX = minX + math.random() * (maxX - minX)
 	local randomZ = minZ + math.random() * (maxZ - minZ)
 	local pos = Vector3.new(randomX, randomY, randomZ)
@@ -116,23 +103,32 @@ local function getRandomSpawnPosition(sideSign: number): Vector3
 	return pos
 end
 
--- Function to spawn balls randomly on one side of the CentralLine plane
-local function spawnBallsInSection(isTeamA)
-	local teamName = isTeamA and "TeamA" or "TeamB"
-	local sideSign = isTeamA and -1 or 1
+-- Clear existing balls
+local function clearBalls()
+	for _, child in pairs(workspace:GetChildren()) do
+		if child.Name:match("Team[AB]_Ball_") then
+			child:Destroy()
+		end
+	end
+end
+
+-- Function to spawn balls randomly on one side
+local function spawnBallsForTeam(teamName, color)
+	local sideSign = (teamName == "TeamRed") and -1 or 1
 
 	for i = 1, BALLS_PER_SIDE do
 		local ball = ballTemplate:Clone()
 		local pos = getRandomSpawnPosition(sideSign)
 
 		ball.CFrame = CFrame.new(pos)
+		ball.Color = color
 		ball.Parent = workspace
 
 		-- Add a ProximityPrompt if it doesn't exist
 		if not ball:FindFirstChild("ProximityPrompt") then
 			local prompt = Instance.new("ProximityPrompt")
 			prompt.ActionText = "Pick up"
-			prompt.ObjectText = "Ball"
+			prompt.ObjectText = teamName .. " Ball"
 			prompt.MaxActivationDistance = 10
 			prompt.HoldDuration = 0
 			prompt.Parent = ball
@@ -143,8 +139,12 @@ local function spawnBallsInSection(isTeamA)
 	end
 end
 
--- Spawn balls on both sides of CentralLine
-spawnBallsInSection(true)  -- TeamA side
-spawnBallsInSection(false) -- TeamB side
+-- Export function for TeleportService
+_G.SpawnGameBalls = function()
+	clearBalls()
+	spawnBallsForTeam("TeamRed", Color3.fromRGB(255, 0, 0))
+	spawnBallsForTeam("TeamBlue", Color3.fromRGB(0, 0, 255))
+end
 
-print("✅ Ball spawning complete: " .. BALLS_PER_SIDE .. " balls randomly placed on each side of CentralLine")
+print("✅ BallSpawner logic ready.")
+
